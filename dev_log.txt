@@ -1,0 +1,1 @@
+[May 20] PyBullet install failed on Python 3.12 → used conda + Python 3.11 + conda-forge

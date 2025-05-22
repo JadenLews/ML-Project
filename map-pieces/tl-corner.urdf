@@ -1,0 +1,41 @@
+<robot name="corner_wall">
+  <link name="base">
+    <!-- Horizontal mini-wall (right side) -->
+    <visual>
+      <origin xyz="0.25 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.5 0.1 1"/>
+      </geometry>
+    </visual>
+
+    <!-- Vertical mini-wall (top side) -->
+    <visual>
+      <origin xyz="0 0.25 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.1 0.5 1"/>
+      </geometry>
+    </visual>
+
+    <!-- Matching collision for horizontal mini-wall -->
+    <collision>
+      <origin xyz="0.25 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.5 0.1 1"/>
+      </geometry>
+    </collision>
+
+    <!-- Matching collision for vertical mini-wall -->
+    <collision>
+      <origin xyz="0 0.25 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.1 0.5 1"/>
+      </geometry>
+    </collision>
+
+    <!-- Inertial (static) -->
+    <inertial>
+      <mass value="0"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+</robot>

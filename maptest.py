@@ -16,6 +16,8 @@ p.setGravity(0,0,-10)
 #     "goal": [gx, gy, gz],
 #     "obstacles": [...],
 # }
+# }
+
 
 #functions
 def move_agent(dx, dy, dz, id):

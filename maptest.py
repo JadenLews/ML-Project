@@ -3,6 +3,7 @@ import time
 import pybullet_data
 import pickle
 import copy
+import numpy as np
 
 mapFilePath = "./map-pieces/"
 mapFileType = ".urdf"
@@ -31,38 +32,32 @@ def check_goal_collision(agent_id, goal_id):
         return False
     return len(contacts) > 0
 
-def check_explored_areas(hidden, radius, location, map_ids):
-    x0, y0, z0 = location
-
-    for dz in range(-radius, radius + 1):
-        z = z0 + dz
-        if 0 <= z < len(hidden):
-            for dy in range(-radius, radius + 1):
-                y = y0 + dy
-                if 0 <= y < len(hidden[z]):
-                    for dx in range(-radius, radius + 1):
-                        x = x0 + dx
-                        if 0 <= x < len(hidden[z][y]):
-                            if hidden[z][y][x] == "?" and layout[z][y][x] not in skipCells.keys():
-                                p.removeBody(id_layout[z][y][x])
-                                print(z,y,x, layout[z][y][x])
-                                print(layout)
-                                piece = mapFilePath + mapCells.get(layout[z][y][x]) + mapFileType
-                                print(piece)
-                                id_layout[z][y][x] = p.loadURDF(piece, [x, y, z])
-                            if layout[z][y][x] == ' ' and hidden[z][y][x] == "?":
-                                p.removeBody(id_layout[z][y][x])
-                            hidden[z][y][x] = layout[z][y][x]
-    print(hidden)
-
-    return hidden
+def check_explored_areas(map, radius, agent_position):
+    p1 = np.array(agent_position)
+    for indx, element in enumerate(map):
+        print(element)
+        elem_pos = p.getBasePositionAndOrientation(element[0])[0]
+        p2 = np.array(elem_pos)
+        squared_dist = np.sum((p1-p2)**2, axis=0)
+        dist = np.sqrt(squared_dist)
+        if element[-1] == "?":
+            if dist <= radius:
+                if element[1] == "G":
+                    p.removeBody(element[0])
+                    goal_id = p.loadURDF(mapFilePath + "goal" + mapFileType, elem_pos)
+                    map[indx][0] = goal_id
+                    map[indx][-1] = "G"
+                else:
+                    p.removeBody(element[0])
+                    map[indx][0] = p.loadURDF(mapFilePath + mapCells.get(element[1]) + mapFileType, elem_pos)
+                    map[indx][-1] = element[1]
+    return map_objects
 
 
 #layout initialize
 layout = []
-agent_z = 0
-agent_y = 0
-agent_x = 0
+agent_pos = [0, 0, 0]
+
 with open("map.txt") as f:
     layer = []
     tempz = 0
@@ -70,9 +65,7 @@ with open("map.txt") as f:
     for line in f:
         line = list(line.strip())
         if 'A' in line:
-            agent_x = line.index('A')
-            agent_y = tempy
-            agent_z = tempz
+            agent_pos = [line.index('A'), tempy, tempz]
 
         if not line:
             layout.append(layer)
@@ -84,71 +77,51 @@ with open("map.txt") as f:
             tempy += 1
     if layer:
         layout.append(layer)
-print(layout)
-print("i think agent index is ", agent_x, agent_y, agent_z)
 
-hidden = []
-for layer in layout:
-    hidden_inner = []
-    for row in layer:
-        string_inner = ["?"] * len(row)
-        hidden_inner.append(string_inner)
-    hidden.append(hidden_inner)
-
-
-    
 
 
 #map to 3d space
 agent_file = "agent"
 object_ids = []
-mapCells = {"#": "floor", "-": "width_wall", "|": "depth_wall", "1": "tl-corner", "2": "tr-corner", "3": "bl-corner", "4": "br-corner", "?": "unknown"}
-skipCells = {"A": agent_file, "G": "goal", " ": "nothing"}
+mapCells = {"#": "floor", "-": "width_wall", "|": "depth_wall", "1": "tl-corner", "2": "tr-corner", "3": "bl-corner", "4": "br-corner", "?": "unknown", "G": "goal"}
+skipCells = {"A": agent_file, " ": "nothing"}
 
 goal_id = ""
 agent_id = ""
 
+hidden = mapFilePath + "unknown" + mapFileType
 
 
 
+# load mapbh
+map_objects = []
 
-# load map
-id_layout = copy.deepcopy(hidden) #start with hidden
-
-print(hidden, "bruhhhhhhfhsdfhsd")
-
-
-for z, layer in enumerate(id_layout):
+for z, layer in enumerate(layout):
     for y, row in enumerate(layer):
         for x, cell in enumerate(row):
-            if cell in mapCells:
+            if cell in skipCells.keys():
+                if cell == "A":
+                    agent_pos = [x, y, z]
+                    piece = mapFilePath + skipCells.get("A") + mapFileType
+                    agent_id = p.loadURDF(piece, agent_pos)
+            elif cell in mapCells.keys():
                 piece = mapFilePath + mapCells.get(cell) + mapFileType
-                id_layout[z][y][x] = p.loadURDF(piece, [x, y, z])
-            if cell == "G":
-                piece = mapFilePath + skipCells.get(cell) + mapFileType
-                goal_id = p.loadURDF(piece, [x, y, z])
-                id_layout[z][y][x] = " "
-            if cell == "A":
-                id_layout[z][y][x] = " "
-                pass
-piece = mapFilePath + skipCells.get("A") + mapFileType
-agent_id = p.loadURDF(piece, [agent_x, agent_y, agent_z])
-       
-assert agent_id is not None, "Agent was not initialized!"
-assert goal_id is not None, "Goal was not initialized!"
+                map_objects.append([p.loadURDF(hidden, [x, y, z]), cell, "?"])
+
+
+print(map_objects)
+
 
 print("Controls: w = up, s = down, a = left, d = right, q = quit")
 
 trajectory = []
 action_map = {"w":0, "a":1, "s":2, "d":3}
 
-print(hidden, 434343343)
-
+state = agent_pos
 while True:
     state = list(p.getBasePositionAndOrientation(agent_id)[0])
-    rounded_state = list(map(round, state))
 
-    hidden = check_explored_areas(hidden, 1, rounded_state, id_layout)
+    map_objects = check_explored_areas(map_objects, 1.6, state)
     cmd = input("Enter move: ").strip().lower()
 
     if cmd == 'w':
@@ -170,6 +143,7 @@ while True:
     action = action_map.get(cmd)
 
     goal_check = False
+    print(goal_id, "goal hjere")
     if goal_id:
         goal_check = check_goal_collision(agent_id, goal_id)
     reward = 1 if goal_check else -0.01

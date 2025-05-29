@@ -1,32 +1,21 @@
-import pybullet as p
-import time
-import pybullet_data
+import gym
+import numpy as np
+from mlclass import GridExploreEnv
 
-layout = [
-    "#####",
-    "#A  #",
-    "# # #",
-    "#  G#",
-    "#####"
-]
+env = GridExploreEnv("map.txt")
 
+obs = env.reset()
+print("Initial observation shape:", obs.shape)
 
+done = False
+total_reward = 0
+step_count = 0
 
-physicsClient = p.connect(p.GUI)#or p.DIRECT for non-graphical version
-p.setAdditionalSearchPath(pybullet_data.getDataPath()) #optionally
-p.setGravity(0,0,-10)
-planeId = p.loadURDF("plane.urdf")
-startPos = [0,0,1]
-startOrientation = p.getQuaternionFromEuler([0,0,0])
-boxId = p.loadURDF("r2d2.urdf",startPos, startOrientation)
-p.loadURDF("wall.urdf", [0, -2, 0.5])
-p.loadURDF("cube_small.urdf", [1, 0, 0.5])  # small box
-p.loadURDF("cube.urdf", [2, 0, 0.5])        # larger box
-p.loadURDF("test.urdf", [3, 0, 0.5])
-#set the center of mass frame (loadURDF sets base link frame) startPos/Ornp.resetBasePositionAndOrientation(boxId, startPos, startOrientation)
-for i in range (10000):
-    p.stepSimulation()
-    time.sleep(1./240.)
-cubePos, cubeOrn = p.getBasePositionAndOrientation(boxId)
-print(cubePos,cubeOrn)
-p.disconnect()
+while not done and step_count < 10:
+    action = env.action_space.sample()
+    obs, reward, done, info = env.step(action)
+    print(f"Step {step_count}: Action={action}, Reward={reward}, Done={done}")
+    step_count += 1
+    total_reward += reward
+
+print("Episode finished. Total reward:", total_reward)

@@ -21,7 +21,8 @@ CELL_TYPE_MAP = {
     "br-corner": 6,
     "goal": 7,
     "unknown": 8,
-    "nothing": 9
+    "nothing": 9,
+    "agent": 10
 }
 
 # === PYBULLET INIT ===
@@ -67,14 +68,6 @@ def check_explored_areas(map_objects, radius, agent_position):
 
     return map_objects
 
-def check_goal_loaded(map):
-    for entry in map:
-        pos, type, vis_id, real_id, visible = entry
-        if type == "G":
-            if visible != False:
-                return real_id
-            else:
-                return None
 
 def generate_observations(map_objs, agent_pos, map_size):
     width, height, depth = map_size
@@ -90,7 +83,7 @@ def generate_observations(map_objs, agent_pos, map_size):
     ax, ay, az = [round(i) for i in agent_pos]
     obs[ax][ay][az][CELL_TYPE_MAP["agent"]] = 1
 
-    return obs
+    return obs.flatten()
 
 
 
@@ -120,6 +113,9 @@ with open(MAP_FILE) as f:
         max_x = max(max_x, max(len(row) for row in layer))
 
 max_z = len(layout)
+
+# === SET MAP SIZE ===
+MAP_SIZE = [max_x, max_y, max_z]
 
 
 
@@ -180,10 +176,6 @@ for z, layer in enumerate(layout):
 
 
 
-# === SET MAP SIZE ===
-MAP_DEPTH = len(layout)
-MAP_HEIGHT = len(layout[0])
-MAP_DEPTH = len(layout)
 
 assert agent_id is not None, "Agent not loaded!"
 print("Controls: w = up, s = down, a = left, d = right, q = quit")
@@ -197,51 +189,50 @@ print("Controls: w = up, s = down, a = left, d = right, q = quit")
 # === MAIN LOOP ===
 action_map = {"w": (0, 1, 0), "s": (0, -1, 0), "a": (-1, 0, 0), "d": (1, 0, 0)}
 trajectory = []
+done = False
 
-# Initial area reveal before first move
+# Initial reveal
 state = list(p.getBasePositionAndOrientation(agent_id)[0])
 map_objects = check_explored_areas(map_objects, RADIUS, state)
-
-# Step the simulation a few times to ensure visual updates take effect
 for _ in range(5):
     p.stepSimulation()
     time.sleep(0.01)
 
-while True:
-    # input and move
+while not done:
+    begin_obs = generate_observations(map_objects, p.getBasePositionAndOrientation(agent_id)[0], MAP_SIZE)
+
     cmd = input("Enter move: ").strip().lower()
     if cmd == "q":
         print("Exiting.")
         break
+
     if cmd in action_map:
         dx, dy, dz = action_map[cmd]
-        state_before = list(p.getBasePositionAndOrientation(agent_id)[0])
-        grid_state = [round(s) for s in state_before]
         move_agent(dx, dy, dz, agent_id)
-        trajectory.append((grid_state, cmd))
     else:
         print("Invalid command.")
         continue
 
-    # Get new position *right after move*
     state = list(p.getBasePositionAndOrientation(agent_id)[0])
-    map_objects = check_explored_areas(map_objects, RADIUS, state)      
-
-    # Now simulate the step
-    p.stepSimulation()
-    time.sleep(0.05)
+    map_objects = check_explored_areas(map_objects, RADIUS, state)
     p.stepSimulation()
     time.sleep(0.05)
 
-    # Check goal
-    print(goal_id, "gjsigfjskdfsjdk")
-    if goal_id is None:
-        goal_id = check_goal_loaded(map_objects)
-    if goal_id and check_goal_collision(agent_id, goal_id):
+    next_obs = generate_observations(map_objects, state, MAP_SIZE)
+
+    # Goal check
+    done = goal_id and check_goal_collision(agent_id, goal_id)
+    reward = 1 if done else 0
+
+    trajectory.append((begin_obs, cmd, reward, next_obs, done))
+
+    if done:
         print("Goal reached!")
-        with open("manual_trajectory.pkl", "wb") as f:
-            pickle.dump(trajectory, f)
         break
 
     time.sleep(1 / 240)
+
+with open("manual_trajectory.pkl", "wb") as f:
+    pickle.dump(trajectory, f)
+
 p.disconnect()

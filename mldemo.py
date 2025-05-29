@@ -11,10 +11,32 @@ MAP_FILE = "map.txt"
 MAP_FILE_PATH = "./map-pieces/"
 MAP_FILE_TYPE = ".urdf"
 
+CELL_TYPE_MAP = {
+    "floor": 0,
+    "width_wall": 1,
+    "depth_wall": 2,
+    "tl-corner": 3,
+    "tr-corner": 4,
+    "bl-corner": 5,
+    "br-corner": 6,
+    "goal": 7,
+    "unknown": 8,
+    "nothing": 9
+}
+
 # === PYBULLET INIT ===
 physicsClient = p.connect(p.GUI)
 p.setAdditionalSearchPath(pybullet_data.getDataPath())
 p.setGravity(0, 0, -10)
+
+
+
+
+
+
+
+
+
 
 # === HELPERS ===
 def move_agent(dx, dy, dz, agent_id):
@@ -28,46 +50,99 @@ def check_goal_collision(agent_id, goal_id):
 
 def check_explored_areas(map_objects, radius, agent_position):
     p1 = np.array(agent_position)
-    for entry in map_objects:
-        body_id, char, visible = entry
-        if visible != "?":
+    for indx, entry in enumerate(map_objects):
+        pos = entry["pos"]
+        typ = entry["true_type"]
+        vis_id = entry["visual_id"]
+        real_id = entry["real_id"]
+        visible = entry["visible"]
+        if visible != False:
             continue
-        elem_pos = p.getBasePositionAndOrientation(body_id)[0]
-        dist = np.linalg.norm(p1 - np.array(elem_pos))
+        dist = np.linalg.norm(p1 - np.array(pos))
         if dist <= radius:
-            p.removeBody(body_id)
-            new_id = p.loadURDF(MAP_FILE_PATH + mapCells[char] + MAP_FILE_TYPE, elem_pos)
-            entry[0] = new_id
-            entry[2] = char
+            p.resetBasePositionAndOrientation(vis_id, [1000, 1000, 1000], [0, 0, 0, 1])
+            p.resetBasePositionAndOrientation(real_id, pos, [0, 0, 0, 1])
+            map_objects[indx]["visual_id"] = real_id
+            map_objects[indx]["visible"] = True
+
     return map_objects
 
 def check_goal_loaded(map):
     for entry in map:
-        body_id, char, visible = entry
-        if char == "G":
-            if visible != "?":
-                return body_id
+        pos, type, vis_id, real_id, visible = entry
+        if type == "G":
+            if visible != False:
+                return real_id
             else:
                 return None
+
+def generate_observations(map_objs, agent_pos, map_size):
+    width, height, depth = map_size
+    obs = np.zeros((width, height, depth, len(CELL_TYPE_MAP)))
+
+    for entry in map_objs:
+        x, y, z = [round(i) for i in entry["pos"]]
+        if entry["visible"]:
+            type_idx = CELL_TYPE_MAP[entry["true_type"]]
+        else:
+            type_idx = CELL_TYPE_MAP["unknown"]
+        obs[x][y][z][type_idx] = 1
+    ax, ay, az = [round(i) for i in agent_pos]
+    obs[ax][ay][az][CELL_TYPE_MAP["agent"]] = 1
+
+    return obs
+
+
+
+
+
 
 # === LOAD MAP ===
 layout = []
 agent_pos = [0, 0, 0]
+max_x = max_y = 0
+
 with open(MAP_FILE) as f:
-    layer, tempz, tempy = [], 0, 0
+    layer = []
     for line in f:
-        line = list(line.strip())
-        if 'A' in line:
-            agent_pos = [line.index('A'), tempy, tempz]
-        if not line:
-            layout.append(layer)
-            layer, tempy, tempz = [], 0, tempz + 1
+        line = line.strip()
+        if not line:#
+            if layer:
+                layout.append(layer)
+                max_y = max(max_y, len(layer))
+                max_x = max(max_x, max(len(row) for row in layer))
+                layer = []
         else:
-            layer.append(line)
-            tempy += 1
-    if layer: layout.append(layer)
+            layer.append(list(line))
+    if layer:
+        layout.append(layer)
+        max_y = max(max_y, len(layer))
+        max_x = max(max_x, max(len(row) for row in layer))
+
+max_z = len(layout)
+
+
+
+#print(f"Map dimensions (x, y, z): ({max_x}, {max_y}, {max_z})")
+
+
 
 # === OBJECT LOADING ===
+
+
+# map_objects = [
+#   {
+#     "pos": [x, y, z],
+#     "true_type": "#",         # what it actually is
+#     "visual_id": id1,         # what the agent sees now (e.g., unknown block)
+#     "real_id": id2,           # the actual map object to show when discovered
+#     "visible": False          # has it been revealed?
+#   },
+#   ...
+# ]
+
+
+
 mapCells = {
     "#": "floor", "-": "width_wall", "|": "depth_wall", "1": "tl-corner", "2": "tr-corner",
     "3": "bl-corner", "4": "br-corner", "?": "unknown", "G": "goal"
@@ -77,6 +152,9 @@ skipCells = {"A": "agent", " ": "nothing"}
 map_objects = []
 agent_id = goal_id = None
 
+max_height = 0
+max_width = 0
+
 for z, layer in enumerate(layout):
     for y, row in enumerate(layer):
         for x, cell in enumerate(row):
@@ -85,38 +163,80 @@ for z, layer in enumerate(layout):
                 if cell == "A":
                     agent_id = p.loadURDF(MAP_FILE_PATH + "agent" + MAP_FILE_TYPE, pos)
             elif cell in mapCells:
-                body_id = p.loadURDF(MAP_FILE_PATH + "unknown" + MAP_FILE_TYPE, pos)
-                map_objects.append([body_id, cell, "?"])
+                vis_id = p.loadURDF(MAP_FILE_PATH + "unknown" + MAP_FILE_TYPE, pos)
+                real_id = p.loadURDF(MAP_FILE_PATH + mapCells.get(cell) + MAP_FILE_TYPE, [1000,1000,1000])
+                entry = {
+                    "pos": pos,
+                    "true_type": mapCells.get(cell),
+                    "visual_id": vis_id,
+                    "real_id": real_id,
+                    "visible": False
+                }
+                map_objects.append(entry)
                 if cell == "G":
-                    goal_pos = pos  # Store goal pos to confirm later
+                    goal_id = real_id
+                    goal_pos = pos 
+
+
+
+
+# === SET MAP SIZE ===
+MAP_DEPTH = len(layout)
+MAP_HEIGHT = len(layout[0])
+MAP_DEPTH = len(layout)
 
 assert agent_id is not None, "Agent not loaded!"
 print("Controls: w = up, s = down, a = left, d = right, q = quit")
+
+
+
+
+
+
 
 # === MAIN LOOP ===
 action_map = {"w": (0, 1, 0), "s": (0, -1, 0), "a": (-1, 0, 0), "d": (1, 0, 0)}
 trajectory = []
 
-while True:
-    state = list(p.getBasePositionAndOrientation(agent_id)[0])
-    grid_state = [round(s) for s in state]
-    map_objects = check_explored_areas(map_objects, RADIUS, state)
+# Initial area reveal before first move
+state = list(p.getBasePositionAndOrientation(agent_id)[0])
+map_objects = check_explored_areas(map_objects, RADIUS, state)
 
+# Step the simulation a few times to ensure visual updates take effect
+for _ in range(5):
+    p.stepSimulation()
+    time.sleep(0.01)
+
+while True:
+    # input and move
     cmd = input("Enter move: ").strip().lower()
     if cmd == "q":
         print("Exiting.")
         break
     if cmd in action_map:
         dx, dy, dz = action_map[cmd]
+        state_before = list(p.getBasePositionAndOrientation(agent_id)[0])
+        grid_state = [round(s) for s in state_before]
         move_agent(dx, dy, dz, agent_id)
         trajectory.append((grid_state, cmd))
     else:
         print("Invalid command.")
+        continue
 
-    if goal_id == None:
-        goal_id = check_goal_loaded(map_objects)
+    # Get new position *right after move*
+    state = list(p.getBasePositionAndOrientation(agent_id)[0])
+    map_objects = check_explored_areas(map_objects, RADIUS, state)      
 
+    # Now simulate the step
     p.stepSimulation()
+    time.sleep(0.05)
+    p.stepSimulation()
+    time.sleep(0.05)
+
+    # Check goal
+    print(goal_id, "gjsigfjskdfsjdk")
+    if goal_id is None:
+        goal_id = check_goal_loaded(map_objects)
     if goal_id and check_goal_collision(agent_id, goal_id):
         print("Goal reached!")
         with open("manual_trajectory.pkl", "wb") as f:
@@ -124,5 +244,4 @@ while True:
         break
 
     time.sleep(1 / 240)
-
 p.disconnect()

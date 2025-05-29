@@ -109,8 +109,6 @@ for z, layer in enumerate(layout):
                 map_objects.append([p.loadURDF(hidden, [x, y, z]), cell, "?"])
 
 
-print(map_objects)
-
 
 print("Controls: w = up, s = down, a = left, d = right, q = quit")
 

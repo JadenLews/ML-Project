@@ -20,24 +20,16 @@ SKIPCELLS = {"A": "agent", " ": "nothing"}
 ACTIONMAP = {"w": (0, -1, 0), "s": (0, 1, 0), "a": (-1, 0, 0), "d": (1, 0, 0)}
 ACTIONS = list(ACTIONMAP.keys())
 BARRIOR = ["#", "W"]
+CHAR_TO_FLOAT = {
+    "?": 0.0,
+    " ": 0.1,
+    "#": 0.2,
+    "A": 0.3,
+    "G": 0.4,
+    "f": 0.5  # if you're using this in path visualization
+}
 
 
-
-
-
-
-# def generate_observations(map_objs, agent_pos, map_size):
-#     width, height, depth = map_size
-#     obs = np.zeros((width, height, depth, len(CELL_TYPE_MAP)))
-#     for entry in map_objs:
-#         x, y, z = [round(i) for i in entry["pos"]]
-#         if 0 <= x < width and 0 <= y < height and 0 <= z < depth:
-#             idx = CELL_TYPE_MAP[entry["true_type"] if entry["visible"] else "unknown"]
-#             obs[x][y][z][idx] = 1
-#     ax, ay, az = [round(i) for i in agent_pos]
-#     if 0 <= ax < width and 0 <= ay < height and 0 <= az < depth:
-#         obs[ax][ay][az][CELL_TYPE_MAP["agent"]] = 1
-#     return obs.flatten().astype(np.float32)
 
 class GridExploreEnv(gym.Env):
     def __init__(self, map_file, output=False):
@@ -47,11 +39,13 @@ class GridExploreEnv(gym.Env):
         self.step_count = 0
         self.round_reward = 0
         self.total_reward = 0
+        self.round_areas_explored = 0
+        self.terminated = False
 
 
         self._load_map()
 
-        #self.observe_space = spaces.Box(0, 1, shape=(np.prod(self.MAP_SIZE) * len(CELL_TYPE_MAP),), dtype=np.float32)
+        self.observation_space = spaces.Box(0, 1, shape=(np.prod(self.MAP_SIZE),), dtype=np.float32)
         self.action_space = spaces.Discrete(len(ACTIONS))
 
 # === HELPERS ===
@@ -64,6 +58,7 @@ class GridExploreEnv(gym.Env):
                     dist = np.linalg.norm(np.array(self.agent_pos) - np.array(cell_pos))
                     if dist <= RADIUS:
                         if self.visionmap[z][y][x] == "?":
+                            self.round_areas_explored += 1
                             self.visionmap[z][y][x] = self.truemap[z][y][x]
 
     def move_agent(self, dx, dy, dz):
@@ -133,7 +128,14 @@ class GridExploreEnv(gym.Env):
 
         return float('inf'), []  # Goal not found
         
-
+    def _generate_observation(self):
+        flat_obs = []
+        for z in range(self.MAP_SIZE[2]):
+            for y in range(self.MAP_SIZE[1]):
+                for x in range(self.MAP_SIZE[0]):
+                    char = self.visionmap[z][y][x]
+                    flat_obs.append(CHAR_TO_FLOAT.get(char, 0.0))  # fallback to 0.0 for unknown
+        return np.array(flat_obs, dtype=np.float32)
                         
 
 
@@ -186,6 +188,8 @@ class GridExploreEnv(gym.Env):
 
 
     def reset(self, seed=None, options=None):
+        super().reset(seed=seed)  # Optional but good to include for seeding
+
         self.step_count = 0
         self.round_reward = 0
         self.total_reward = 0
@@ -195,23 +199,21 @@ class GridExploreEnv(gym.Env):
         self.visionmap = []
         self.MAP_SIZE = [0, 0, 0]
         self.map_objects = []
-        
+        self.round_areas_explored = 0
+        self.terminated = False
+
+
+
         self._load_map()
 
-        pass
-        # super().reset(seed=seed)
-        # if seed is not None:
-        #     np.random.seed(seed)
-        # p.resetSimulation()
-        # self._load_map()
-        # self.step_count = 0
-        # agent_pos = p.getBasePositionAndOrientation(self.agent_id)[0]
-        # self.map_objects = check_explored_areas(self.map_objects, RADIUS, agent_pos)
-        # return generate_observations(self.map_objects, agent_pos, self.MAP_SIZE), {}
+        # Generate initial observation (from visionmap or other method)
+        obs = self._generate_observation()
+        return obs, {}
+
 
     def step(self, action):
         self.step_count += 1
-        dx, dy, dz = ACTIONMAP.get(action)
+        dx, dy, dz = ACTIONMAP.get(ACTIONS[action])
         agent_prev_pos = self.agent_pos.copy()
 
         self.move_agent(dx, dy, dz)
@@ -232,7 +234,6 @@ class GridExploreEnv(gym.Env):
             print(self.visionmap)
         
 
-        moved = False
         dist, path, f_path = self.score_path_bfs(agent_post_pos)
 
 
@@ -243,35 +244,32 @@ class GridExploreEnv(gym.Env):
             print(f_path, "best path now")
         
 
+        reward = 0.0
+
+        if self.check_goal_collision():
+            reward += 10
+            self.terminated = True
+        else:
+            self.terminated = False
+
+        if moved:
+            # Encourage moving along shortest path
+            if agent_post_pos in path:
+                reward += 0.05
+            else:
+                reward -= 0.05
+        else:
+            reward -= 0.1  # hitting a wall
+
+        # Bonus for exploration
+        reward += 0.01 * self.round_areas_explored
+        self.round_areas_explored = 0
+
+        truncated = self.step_count >= MAX_STEPS
+        obs = self._generate_observation()
+        return obs, reward, self.terminated, truncated, {}
 
 
-
-
-        # dx, dy, dz = self.action_map[self.actions[action]]
-        # agent_prev_pos = p.getBasePositionAndOrientation(self.agent_id)[0]
-        # moved = move_agent(dx, dy, dz, self.agent_id, self.MAP_SIZE, self.map_grid)
-
-        # # for _ in range(2):
-        # #     p.stepSimulation()
-        # #     time.sleep(0.01)
-
-        # agent_pos = p.getBasePositionAndOrientation(self.agent_id)[0]
-        # self.map_objects = check_explored_areas(self.map_objects, RADIUS, agent_pos)
-        # obs = generate_observations(self.map_objects, agent_pos, self.MAP_SIZE)
-
-        # reached = check_goal_collision(self.agent_id, self.goal_id)
-        # if reached:
-        #     reward = 10.0  # make reaching the goal very attractive
-        # else:
-        #     reward = -0.1  # penalize every step clearly
-        # if not moved:
-        #     reward -= 0.1
-
-        # self.step_count += 1
-        # terminated = reached
-        # truncated = self.step_count >= MAX_STEPS
-
-        # return obs, reward, terminated, truncated, {"agent_pos": agent_pos}
 
     def render(self, mode='human'):
         pass

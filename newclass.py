@@ -50,6 +50,17 @@ class GridExploreEnv(gym.Env):
 
 # === HELPERS ===
 
+    def arr_to_str(self, arr):
+        temp = ""
+        for z in arr:
+            for y in z:
+                for x in y:
+                    temp += x
+                temp += "\n"
+            temp += "\n"
+        return temp
+
+
     def check_explored_areas(self):
         for z, panel in enumerate(self.visionmap):
             for y, row in enumerate(panel):
@@ -70,8 +81,6 @@ class GridExploreEnv(gym.Env):
         if nposx >= 0 and nposx < self.MAP_SIZE[0]:
             if nposy >= 0 and nposy < self.MAP_SIZE[1]:
                 if nposz >= 0 and nposz < self.MAP_SIZE[2]:
-                    if self.gui:
-                        print("good location")
                     if self.truemap[nposz][nposy][nposx] not in BARRIOR:
                         self.visionmap[z][y][x] = self.truemap[z][y][x]
                         self.visionmap[nposz][nposy][nposx] = "A"
@@ -181,8 +190,8 @@ class GridExploreEnv(gym.Env):
         self.check_explored_areas()
         if self.gui:
             dist, path, bpath = self.score_path_bfs(self.agent_pos)
-            print(self.visionmap, "initial vision map")
-            print(bpath, "initial best path")
+            print(self.arr_to_str(self.visionmap), "initial vision map")
+            print(self.arr_to_str(bpath), "initial best path")
 
 
 
@@ -230,18 +239,16 @@ class GridExploreEnv(gym.Env):
 
 
         self.check_explored_areas()
-        if self.gui:
-            print(self.visionmap)
         
 
         dist, path, f_path = self.score_path_bfs(agent_post_pos)
 
 
-        if self.gui:
-            print(self.visionmap, "vision map")
+        # if self.gui:
+        #     print(self.visionmap, "vision map")
 
         if self.gui:
-            print(f_path, "best path now")
+            print(self.arr_to_str(f_path), "best path now")
         
 
         reward = 0.0

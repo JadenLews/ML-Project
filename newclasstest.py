@@ -27,17 +27,23 @@ from newclass import GridExploreEnv
 # # env.step("d")
 # # env.step("d")
 # # env.step("d")
-
-
-env = GridExploreEnv("map.txt", True)
+ACTIONMAP = {"w": (0, -1, 0), "s": (0, 1, 0), "a": (-1, 0, 0), "d": (1, 0, 0)}
+ACTIONS = list(ACTIONMAP.keys())
+MAP_FP = "./maps/"
+MAPS = ["map.txt", "sarah.txt"]
+env = GridExploreEnv(MAP_FP + "jaden.txt", True)
 obs, _ = env.reset()
 done = False
 while not done:
+    print("========= NEW STEP ===============")
     action = env.action_space.sample()
+    print("action:", ACTIONS[action])
     obs, reward, terminated, truncated, _ = env.step(action)
     print(f"Reward: {reward}, Done: {terminated or truncated}")
     if terminated or truncated:
         break
+print("========= DONE ===============")
+
 
 
 
